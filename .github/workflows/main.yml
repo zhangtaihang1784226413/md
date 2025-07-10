@@ -1,0 +1,319 @@
+name: 🚀 生产环境部署
+
+on:
+  workflow_dispatch:
+    inputs:
+      version_type:
+        description: '版本类型'
+        required: true
+        type: choice
+        options:
+          - 'latest-commit'
+          - 'commit-1'
+          - 'commit-2'
+          - 'commit-3'
+          - 'commit-4'
+          - 'commit-5'
+          - 'latest-tag'
+          - 'specific-tag'
+          - 'specific-commit'
+        default: 'latest-commit'
+      version:
+        description: '指定版本 (当选择 specific-tag 或 specific-commit 时必填)'
+        required: false
+        type: string
+      confirm_deploy:
+        description: '确认部署到生产环境'
+        required: true
+        type: boolean
+        default: false
+
+jobs:
+  get-commit-info:
+    runs-on: ubuntu-latest
+    outputs:
+      commit_info: ${{ steps.get-commits.outputs.commit_info }}
+    steps:
+    - name: 📥 检出代码
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 10  # 获取最近10个提交
+
+    - name: 📋 获取最近提交信息
+      id: get-commits
+      run: |
+        echo "## 🔍 最近可选择的提交 (请记住这些信息用于选择)"
+        echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+        
+        # 获取最近5个提交的详细信息
+        commit_info=""
+        for i in {0..4}; do
+          commit_sha=$(git rev-parse HEAD~$i 2>/dev/null || echo "")
+          if [ -n "$commit_sha" ]; then
+            short_sha=$(git rev-parse --short HEAD~$i)
+            commit_message=$(git log -1 --pretty=format:"%s" HEAD~$i)
+            commit_author=$(git log -1 --pretty=format:"%an" HEAD~$i)
+            commit_date=$(git log -1 --pretty=format:"%ai" HEAD~$i)
+            
+            if [ $i -eq 0 ]; then
+              echo "🟢 latest-commit: $short_sha - $commit_message"
+            else
+              echo "🔵 commit-$((i+1)): $short_sha - $commit_message"
+            fi
+            echo "   👤 $commit_author"
+            echo "   📅 $commit_date"
+            echo ""
+            
+            # 保存信息供后续使用
+            commit_info="${commit_info}COMMIT_${i}_SHA=${commit_sha}|COMMIT_${i}_SHORT=${short_sha}|COMMIT_${i}_MESSAGE=${commit_message}|COMMIT_${i}_AUTHOR=${commit_author}|COMMIT_${i}_DATE=${commit_date}||"
+          fi
+        done
+        
+        echo "commit_info<<EOF" >> $GITHUB_OUTPUT
+        echo "$commit_info" >> $GITHUB_OUTPUT
+        echo "EOF" >> $GITHUB_OUTPUT
+        
+        echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+        echo "💡 请根据上面的信息选择 'latest-commit' 或 'commit-1' 到 'commit-5'"
+
+  validate-and-fetch-version:
+    needs: get-commit-info
+    runs-on: ubuntu-latest
+    outputs:
+      deploy_version: ${{ steps.determine-version.outputs.deploy_version }}
+      commit_sha: ${{ steps.determine-version.outputs.commit_sha }}
+      commit_message: ${{ steps.determine-version.outputs.commit_message }}
+      commit_author: ${{ steps.determine-version.outputs.commit_author }}
+      commit_date: ${{ steps.determine-version.outputs.commit_date }}
+      version_info: ${{ steps.determine-version.outputs.version_info }}
+    steps:
+    - name: 🔍 验证输入参数
+      run: |
+        if [ "${{ inputs.confirm_deploy }}" != "true" ]; then
+          echo "❌ 请确认部署到生产环境"
+          exit 1
+        fi
+        
+        if [ "${{ inputs.version_type }}" = "specific-tag" ] || [ "${{ inputs.version_type }}" = "specific-commit" ]; then
+          if [ -z "${{ inputs.version }}" ]; then
+            echo "❌ 选择了指定版本类型，但未提供版本信息"
+            exit 1
+          fi
+        fi
+        
+        echo "✅ 输入参数验证通过"
+
+    - name: 📥 检出代码
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0  # 获取完整历史记录以便查看标签和提交
+
+    - name: 🎯 确定部署版本
+      id: determine-version
+      run: |
+        # 解析提交信息
+        commit_info="${{ needs.get-commit-info.outputs.commit_info }}"
+        
+        case "${{ inputs.version_type }}" in
+          "latest-commit")
+            commit_sha=$(git rev-parse HEAD)
+            deploy_version=$commit_sha
+            version_info="最新提交"
+            ;;
+          "commit-1")
+            commit_sha=$(git rev-parse HEAD~0)
+            deploy_version=$commit_sha
+            short_sha=$(git rev-parse --short HEAD~0)
+            commit_msg=$(git log -1 --pretty=format:"%s" HEAD~0)
+            version_info="第1个提交: $short_sha - $commit_msg"
+            ;;
+          "commit-2")
+            commit_sha=$(git rev-parse HEAD~1)
+            deploy_version=$commit_sha
+            short_sha=$(git rev-parse --short HEAD~1)
+            commit_msg=$(git log -1 --pretty=format:"%s" HEAD~1)
+            version_info="第2个提交: $short_sha - $commit_msg"
+            ;;
+          "commit-3")
+            commit_sha=$(git rev-parse HEAD~2)
+            deploy_version=$commit_sha
+            short_sha=$(git rev-parse --short HEAD~2)
+            commit_msg=$(git log -1 --pretty=format:"%s" HEAD~2)
+            version_info="第3个提交: $short_sha - $commit_msg"
+            ;;
+          "commit-4")
+            commit_sha=$(git rev-parse HEAD~3)
+            deploy_version=$commit_sha
+            short_sha=$(git rev-parse --short HEAD~3)
+            commit_msg=$(git log -1 --pretty=format:"%s" HEAD~3)
+            version_info="第4个提交: $short_sha - $commit_msg"
+            ;;
+          "commit-5")
+            commit_sha=$(git rev-parse HEAD~4)
+            deploy_version=$commit_sha
+            short_sha=$(git rev-parse --short HEAD~4)
+            commit_msg=$(git log -1 --pretty=format:"%s" HEAD~4)
+            version_info="第5个提交: $short_sha - $commit_msg"
+            ;;
+          "latest-tag")
+            # 获取最新标签
+            latest_tag=$(git describe --tags --abbrev=0 2>/dev/null || echo "")
+            if [ -z "$latest_tag" ]; then
+              echo "❌ 未找到任何标签，将使用最新提交"
+              commit_sha=$(git rev-parse HEAD)
+              deploy_version=$commit_sha
+              version_info="最新提交 (无标签)"
+            else
+              commit_sha=$(git rev-list -n 1 $latest_tag)
+              deploy_version=$latest_tag
+              version_info="最新标签: $latest_tag"
+            fi
+            ;;
+          "specific-tag")
+            # 验证标签是否存在
+            if git rev-parse "refs/tags/${{ inputs.version }}" >/dev/null 2>&1; then
+              commit_sha=$(git rev-list -n 1 "refs/tags/${{ inputs.version }}")
+              deploy_version="${{ inputs.version }}"
+              version_info="指定标签: ${{ inputs.version }}"
+            else
+              echo "❌ 标签 '${{ inputs.version }}' 不存在"
+              echo "📋 可用标签："
+              git tag -l | head -10
+              exit 1
+            fi
+            ;;
+          "specific-commit")
+            # 验证提交SHA是否存在
+            if git rev-parse "${{ inputs.version }}" >/dev/null 2>&1; then
+              commit_sha=$(git rev-parse "${{ inputs.version }}")
+              deploy_version="${{ inputs.version }}"
+              version_info="指定提交: ${{ inputs.version }}"
+            else
+              echo "❌ 提交 '${{ inputs.version }}' 不存在"
+              exit 1
+            fi
+            ;;
+        esac
+        
+        # 获取提交详细信息
+        commit_message=$(git log -1 --pretty=format:"%s" $commit_sha)
+        commit_author=$(git log -1 --pretty=format:"%an <%ae>" $commit_sha)
+        commit_date=$(git log -1 --pretty=format:"%ai" $commit_sha)
+        
+        # 输出信息
+        echo "deploy_version=$deploy_version" >> $GITHUB_OUTPUT
+        echo "commit_sha=$commit_sha" >> $GITHUB_OUTPUT
+        echo "commit_message<<EOF" >> $GITHUB_OUTPUT
+        echo "$commit_message" >> $GITHUB_OUTPUT
+        echo "EOF" >> $GITHUB_OUTPUT
+        echo "commit_author<<EOF" >> $GITHUB_OUTPUT
+        echo "$commit_author" >> $GITHUB_OUTPUT
+        echo "EOF" >> $GITHUB_OUTPUT
+        echo "commit_date=$commit_date" >> $GITHUB_OUTPUT
+        echo "version_info<<EOF" >> $GITHUB_OUTPUT
+        echo "$version_info" >> $GITHUB_OUTPUT
+        echo "EOF" >> $GITHUB_OUTPUT
+        
+        echo "✅ 版本信息确定完成"
+
+  list-recent-versions:
+    needs: [get-commit-info, validate-and-fetch-version]
+    runs-on: ubuntu-latest
+    steps:
+    - name: 📥 检出代码
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+
+    - name: 📋 显示选择的版本详情
+      run: |
+        echo "## 📦 当前部署版本详情"
+        echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+        echo "🏷️  版本类型: ${{ inputs.version_type }}"
+        echo "📋 版本信息: ${{ needs.validate-and-fetch-version.outputs.version_info }}"
+        echo "🔖 部署版本: ${{ needs.validate-and-fetch-version.outputs.deploy_version }}"
+        echo "📝 提交SHA: ${{ needs.validate-and-fetch-version.outputs.commit_sha }}"
+        echo "💬 提交信息: ${{ needs.validate-and-fetch-version.outputs.commit_message }}"
+        echo "👤 提交作者: ${{ needs.validate-and-fetch-version.outputs.commit_author }}"
+        echo "📅 提交时间: ${{ needs.validate-and-fetch-version.outputs.commit_date }}"
+        echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+        echo ""
+        
+        echo "## 📋 最近可用标签 (最新10个)"
+        echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+        if git tag -l | head -1 >/dev/null 2>&1; then
+          git tag -l --sort=-version:refname | head -10 | while read tag; do
+            if [ -n "$tag" ]; then
+              tag_commit=$(git rev-list -n 1 $tag 2>/dev/null || echo "unknown")
+              tag_date=$(git log -1 --pretty=format:"%ai" $tag 2>/dev/null || echo "unknown")
+              tag_message=$(git tag -l --format='%(contents:subject)' $tag 2>/dev/null || git log -1 --pretty=format:"%s" $tag 2>/dev/null || echo "No message")
+              echo "🏷️  $tag"
+              echo "   📝 $tag_message"
+              echo "   📅 $tag_date"
+              echo "   🔗 $tag_commit"
+              echo ""
+            fi
+          done
+        else
+          echo "❌ 未找到任何标签"
+        fi
+        
+        echo "## 📋 最近提交历史 (参考)"
+        echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+        git log --oneline --decorate -10 --pretty=format:"🔗 %h - %s%n   👤 %an <%ae>%n   📅 %ai%n"
+
+  deploy:
+    needs: [validate-and-fetch-version, list-recent-versions]
+    runs-on: ubuntu-latest
+    environment: 
+      name: production
+      url: http://your-server:8010
+    
+    steps:
+    - name: 📥 检出代码
+      uses: actions/checkout@v4
+
+    - name: 📋 部署信息摘要
+      run: |
+        echo "## 🚀 开始生产环境部署"
+        echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+        echo "🎯 环境: 生产环境"
+        echo "🏷️  版本类型: ${{ inputs.version_type }}"
+        echo "📦 部署版本: ${{ needs.validate-and-fetch-version.outputs.deploy_version }}"
+        echo "📝 提交SHA: ${{ needs.validate-and-fetch-version.outputs.commit_sha }}"
+        echo "💬 提交信息: ${{ needs.validate-and-fetch-version.outputs.commit_message }}"
+        echo "👤 提交作者: ${{ needs.validate-and-fetch-version.outputs.commit_author }}"
+        echo "📅 提交时间: ${{ needs.validate-and-fetch-version.outputs.commit_date }}"
+        echo "👨‍💻 操作人员: ${{ github.actor }}"
+        echo "🕐 部署时间: $(date -u '+%Y-%m-%d %H:%M:%S UTC')"
+        echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+
+    - name: 🚀 执行部署
+      run: |
+        echo "🌐 正在部署到远程服务器..."
+        echo "📦 部署镜像版本: ${{ needs.validate-and-fetch-version.outputs.deploy_version }}"
+        echo "🎯 目标服务器: ${{ secrets.SSH_HOST }}"
+        chmod +x scripts/one_click_deploy_remote.sh
+        export API_VERSION=${{ needs.validate-and-fetch-version.outputs.deploy_version }}
+        export ALI_REGISTRY_USERNAME=${{ secrets.ALI_REGISTRY_USERNAME }}
+        export ALI_REGISTRY_PASSWORD=${{ secrets.ALI_REGISTRY_PASSWORD }}
+        export ALI_REGISTRY_URL=${{ secrets.ALI_REGISTRY_URL }}
+        export PROJECT_NAME="${{ vars.PROJECT_NAME || 'naibaoai' }}"
+        export DEPLOY_HOST=${{ secrets.SSH_HOST }}
+        export DEPLOY_USER=${{ secrets.SSH_USER }}
+        export DEPLOY_DIR=${{ secrets.DEPLOY_DIR }}
+        export SSH_PRIVATE_KEY="${{ secrets.SSH_KEY }}"
+        echo "🚀 开始执行部署脚本..."
+        ./scripts/one_click_deploy_remote.sh
+
+    - name: ✅ 部署完成
+      run: |
+        echo "## 🎉 部署成功完成！"
+        echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+        echo "📦 已部署版本: ${{ needs.validate-and-fetch-version.outputs.deploy_version }}"
+        echo "📝 提交信息: ${{ needs.validate-and-fetch-version.outputs.commit_message }}"
+        echo "👤 提交作者: ${{ needs.validate-and-fetch-version.outputs.commit_author }}"
+        echo "🌐 API 地址: http://${{ secrets.SSH_HOST }}:8010"
+        echo "👨‍💼 管理地址: http://${{ secrets.SSH_HOST }}:8011"
+        echo "⏰ 完成时间: $(date -u '+%Y-%m-%d %H:%M:%S UTC')"
+        echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━" 
